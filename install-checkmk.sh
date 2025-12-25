@@ -51,21 +51,7 @@ fi
 run "Enable autostart site" omd config "$SITE_NAME" set AUTOSTART on
 
 # 5. Start site (DETACHED – START ONCE)
-if omd status "$SITE_NAME" | grep -q "Overall state.*running"; then
-    ok "Site ${SITE_NAME} đang chạy (skip start)"
-else
-    echo "⏳ Starting site ${SITE_NAME}..."
-    nohup omd start "$SITE_NAME" >>"$LOG_FILE" 2>&1 </dev/null & disown
-
-    for i in {1..30}; do
-        sleep 2
-        if omd status "$SITE_NAME" | grep -q "Overall state.*running"; then
-            ok "Start site ${SITE_NAME}"
-            break
-        fi
-        [ "$i" -eq 30 ] && fail "Start site ${SITE_NAME} (timeout)"
-    done
-fi
+omd start "$SITE_NAME"
 
 # 6. Telegram notify (NON-BLOCKING)
 if timeout 15 omd su "$SITE_NAME" -c \
