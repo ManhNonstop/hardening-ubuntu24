@@ -98,8 +98,6 @@ systemctl reload ssh
 ############################
 echo "[*] Cấu hình PAM faillock an toàn..."
 
-apt install -y libpam-faillock
-
 cat >/etc/security/faillock.conf <<EOF
 deny = 5
 unlock_time = 900
