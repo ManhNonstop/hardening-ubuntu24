@@ -6,7 +6,7 @@ set -e
 ############################
 SSH_PORT=7722
 ADMIN_USER="manhhc"
-SSH_KEY=""
+SSH_KEY="ssh-rsa rsa-key-manhhc"
 
 HOSTNAME="vm-git"
 BACKUP_DIR="/root/backup_hardening_$(date +%F_%H%M%S)"
