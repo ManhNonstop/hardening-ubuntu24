@@ -41,18 +41,28 @@ else
 fi
 
 # 3. Create site
-if omd sites | grep -q "^${SITE_NAME}"; then
+if omd sites | grep -q "^${SITE_NAME}$"; then
     print_ok "Site ${SITE_NAME} đã tồn tại (skip tạo site)"
     PASSWORD="(site đã tồn tại – reset bằng cmk-passwd cmkadmin)"
 else
-    CREATE_OUTPUT=$(omd create "$SITE_NAME" >>"$LOG_FILE" 2>&1 || true)
-    PASSWORD=$(echo "$CREATE_OUTPUT" | grep "password:" | awk '{print $NF}')
-    if [[ -n "$PASSWORD" ]]; then
-        print_ok "Tạo site ${SITE_NAME}"
-    else
+    echo "⏳ Đang tạo site ${SITE_NAME}..."
+
+    CREATE_OUTPUT=$(omd create "$SITE_NAME" 2>&1 | tee -a "$LOG_FILE")
+    EXIT_CODE=${PIPESTATUS[0]}
+
+    if [ "$EXIT_CODE" -ne 0 ]; then
         print_fail "Tạo site ${SITE_NAME}"
         exit 1
     fi
+
+    PASSWORD=$(echo "$CREATE_OUTPUT" | grep "password:" | awk '{print $NF}')
+
+    if [ -z "$PASSWORD" ]; then
+        print_fail "Không lấy được password site"
+        exit 1
+    fi
+
+    print_ok "Tạo site ${SITE_NAME}"
 fi
 
 # 4. Enable autostart
