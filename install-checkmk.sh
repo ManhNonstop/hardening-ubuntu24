@@ -69,7 +69,21 @@ fi
 run_step "Enable autostart site" omd config "$SITE_NAME" set AUTOSTART on
 
 # 5. Start site
-run_step "Start site ${SITE_NAME}" omd start "$SITE_NAME"
+run_step "Start site ${SITE_NAME}" echo "⏳ Starting site ${SITE_NAME} (async)..."
+
+timeout 60 omd start "$SITE_NAME" >>"$LOG_FILE" 2>&1 &
+
+for i in {1..30}; do
+    sleep 2
+    if omd status "$SITE_NAME" | grep -q "Overall state.*running"; then
+        print_ok "Start site ${SITE_NAME}"
+        break
+    fi
+    if [ "$i" -eq 30 ]; then
+        print_fail "Start site ${SITE_NAME} (không lên sau 60s)"
+        exit 1
+    fi
+done
 
 # 6. Telegram notify
 run_step "Cài Telegram notification" bash -c "
