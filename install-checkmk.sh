@@ -62,11 +62,11 @@ run_step "Enable autostart site" omd config "$SITE_NAME" set AUTOSTART on
 run_step "Start site ${SITE_NAME}" omd start "$SITE_NAME"
 
 # 6. Telegram notify
-run_step "Cài Telegram notification" omd su "$SITE_NAME" -c "
-mkdir -p ~/local/share/check_mk/notifications &&
-cd ~/local/share/check_mk/notifications &&
-wget --no-check-certificate -q $TELEGRAM_URL -O telegram.sh &&
-chmod ug+x telegram.sh
+run_step "Cài Telegram notification" bash -c "
+set -e
+omd su ${SITE_NAME} -c 'mkdir -p ~/local/share/check_mk/notifications'
+omd su ${SITE_NAME} -c 'cd ~/local/share/check_mk/notifications && timeout 15 wget --no-check-certificate ${TELEGRAM_URL} -O telegram.sh'
+omd su ${SITE_NAME} -c 'chmod ug+x ~/local/share/check_mk/notifications/telegram.sh'
 "
 
 # 7. Restart site
