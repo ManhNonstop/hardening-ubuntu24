@@ -39,19 +39,23 @@ echo "▶️ Start site..."
 omd start "$SITE_NAME"
 
 # 5. Lấy thông tin login
-SITE_INFO=$(omd status "$SITE_NAME")
-SITE_USER="${SITE_NAME}"
-SITE_PASS=$(grep "^${SITE_NAME}:" /etc/omd/sites/"${SITE_NAME}"/htpasswd | cut -d: -f2)
+IP=$(hostname -I | awk '{print $1}')
 
-IP_ADDR=$(hostname -I | awk '{print $1}')
+CREATE_OUTPUT=$(omd create "$SITE_NAME")
 
-echo "=============================="
-echo "✅ CHECKMK ĐÃ SẴN SÀNG"
-echo "=============================="
-echo "🌐 URL      : http://${IP_ADDR}/${SITE_NAME}/"
-echo "👤 User     : ${SITE_USER}"
-echo "🔑 Password: (password lúc tạo site – nếu quên chạy: omd su ${SITE_NAME} -> cmk-passwd ${SITE_NAME})"
-echo "=============================="
+PASSWORD=$(echo "$CREATE_OUTPUT" | grep "password:" | awk '{print $NF}')
+
+omd config "$SITE_NAME" set AUTOSTART on
+omd start "$SITE_NAME"
+
+echo ""
+echo "======================================"
+echo "✅ CHECKMK SITE CREATED SUCCESSFULLY"
+echo "======================================"
+echo "Link login : http://${IP}/${SITE_NAME}"
+echo "Username   : cmkadmin"
+echo "Password   : ${PASSWORD}"
+echo "======================================"
 
 # 6. Cài Telegram notify
 echo "📲 Cài Telegram notification script..."
@@ -64,7 +68,7 @@ EOF
 
 # 7. Restart Apache site
 echo "🔄 Restart Apache site..."
-omd restart apache "$SITE_NAME"
+omd restart "$SITE_NAME"
 
 echo "=============================="
 echo "🎉 HOÀN TẤT CÀI ĐẶT CHECKMK"
