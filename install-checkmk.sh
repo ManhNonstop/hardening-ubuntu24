@@ -12,18 +12,13 @@ mkdir -p /var/log
 IP=$(hostname -I | awk '{print $1}')
 PASSWORD=""
 
-print_ok()   { echo "✅ $1"; }
-print_fail() { echo "❌ $1"; echo "   👉 Xem log: $LOG_FILE"; }
+ok()   { echo "✅ $1"; }
+fail() { echo "❌ $1"; echo "   👉 Xem log: $LOG_FILE"; exit 1; }
 
-run_step() {
+run() {
     DESC="$1"
     shift
-    if "$@" >>"$LOG_FILE" 2>&1; then
-        print_ok "$DESC"
-    else
-        print_fail "$DESC"
-        exit 1
-    fi
+    "$@" >>"$LOG_FILE" 2>&1 && ok "$DESC" || fail "$DESC"
 }
 
 echo "=============================="
@@ -31,72 +26,59 @@ echo "🚀 CÀI ĐẶT CHECKMK RAW"
 echo "=============================="
 
 # 1. Download
-run_step "Download Checkmk" wget -q "$CHECKMK_URL"
+run "Download Checkmk" wget -q "$CHECKMK_URL"
 
 # 2. Install
 if dpkg -i "$CHECKMK_DEB" >>"$LOG_FILE" 2>&1; then
-    print_ok "Cài đặt Checkmk"
+    ok "Cài đặt Checkmk"
 else
-    run_step "Fix dependency" apt -f install -y
+    run "Fix dependency" apt -f install -y
 fi
 
-# 3. Create site
-if omd sites | grep -q "^${SITE_NAME}$"; then
-    print_ok "Site ${SITE_NAME} đã tồn tại (skip tạo site)"
+# 3. Create site (ONE TIME ONLY)
+if omd sites | grep -qx "$SITE_NAME"; then
+    ok "Site ${SITE_NAME} đã tồn tại (skip tạo site)"
     PASSWORD="(site đã tồn tại – reset bằng cmk-passwd cmkadmin)"
 else
     echo "⏳ Đang tạo site ${SITE_NAME}..."
-
-    CREATE_OUTPUT=$(omd create "$SITE_NAME" 2>&1 | tee -a "$LOG_FILE")
-    EXIT_CODE=${PIPESTATUS[0]}
-
-    if [ "$EXIT_CODE" -ne 0 ]; then
-        print_fail "Tạo site ${SITE_NAME}"
-        exit 1
-    fi
-
+    CREATE_OUTPUT=$(omd create "$SITE_NAME" 2>&1 | tee -a "$LOG_FILE") || fail "Tạo site ${SITE_NAME}"
     PASSWORD=$(echo "$CREATE_OUTPUT" | grep "password:" | awk '{print $NF}')
-
-    if [ -z "$PASSWORD" ]; then
-        print_fail "Không lấy được password site"
-        exit 1
-    fi
-
-    print_ok "Tạo site ${SITE_NAME}"
+    [ -n "$PASSWORD" ] || fail "Không lấy được password site"
+    ok "Tạo site ${SITE_NAME}"
 fi
 
 # 4. Enable autostart
-run_step "Enable autostart site" omd config "$SITE_NAME" set AUTOSTART on
+run "Enable autostart site" omd config "$SITE_NAME" set AUTOSTART on
 
-# 5. Start site
-run_step "Start site ${SITE_NAME}" echo "⏳ Starting site ${SITE_NAME} (async)..."
+# 5. Start site (DETACHED – START ONCE)
+if omd status "$SITE_NAME" | grep -q "Overall state.*running"; then
+    ok "Site ${SITE_NAME} đang chạy (skip start)"
+else
+    echo "⏳ Starting site ${SITE_NAME}..."
+    nohup omd start "$SITE_NAME" >>"$LOG_FILE" 2>&1 </dev/null & disown
 
-timeout 60 omd start "$SITE_NAME" >>"$LOG_FILE" 2>&1 &
+    for i in {1..30}; do
+        sleep 2
+        if omd status "$SITE_NAME" | grep -q "Overall state.*running"; then
+            ok "Start site ${SITE_NAME}"
+            break
+        fi
+        [ "$i" -eq 30 ] && fail "Start site ${SITE_NAME} (timeout)"
+    done
+fi
 
-for i in {1..30}; do
-    sleep 2
-    if omd status "$SITE_NAME" | grep -q "Overall state.*running"; then
-        print_ok "Start site ${SITE_NAME}"
-        break
-    fi
-    if [ "$i" -eq 30 ]; then
-        print_fail "Start site ${SITE_NAME} (không lên sau 60s)"
-        exit 1
-    fi
-done
+# 6. Telegram notify (NON-BLOCKING)
+if timeout 15 omd su "$SITE_NAME" -c \
+"mkdir -p ~/local/share/check_mk/notifications && \
+ cd ~/local/share/check_mk/notifications && \
+ wget --no-check-certificate -q $TELEGRAM_URL -O telegram.sh && \
+ chmod ug+x telegram.sh" >>"$LOG_FILE" 2>&1; then
+    ok "Cài Telegram notification"
+else
+    echo "⚠️ Telegram notify không cài được (bỏ qua)"
+fi
 
-# 6. Telegram notify
-run_step "Cài Telegram notification" bash -c "
-set -e
-omd su ${SITE_NAME} -c 'mkdir -p ~/local/share/check_mk/notifications'
-omd su ${SITE_NAME} -c 'cd ~/local/share/check_mk/notifications && timeout 15 wget --no-check-certificate ${TELEGRAM_URL} -O telegram.sh'
-omd su ${SITE_NAME} -c 'chmod ug+x ~/local/share/check_mk/notifications/telegram.sh'
-"
-
-# 7. Restart site
-run_step "Restart site ${SITE_NAME}" omd restart "$SITE_NAME"
-
-# 8. Final output
+# 7. Final info
 echo ""
 echo "======================================"
 echo "🎉 CHECKMK CÀI ĐẶT HOÀN TẤT"
