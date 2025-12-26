@@ -1,28 +1,110 @@
 #!/bin/bash
 set -e
 
-### ===== USER CONFIG =====
+### ===============================
+### USER CONFIG
+### ===============================
 WAZUH_MANAGER="172.16.1.5"
-AGENT_GROUP="${1:-default}"
+DEFAULT_GROUP="vm-core"
 AGENT_NAME="$(hostname)"
-VERSION="4.14.1"
+WAZUH_VERSION="4.14.1"
 
-PKG="wazuh-agent_${VERSION}-1_amd64.deb"
-URL="https://packages.wazuh.com/4.x/apt/pool/main/w/wazuh-agent/${PKG}"
+LOG="/var/log/wazuh-agent-install.log"
+: > "$LOG"
 
-### ======================
-echo "➡ Installing Wazuh Agent"
-echo "   Manager : $WAZUH_MANAGER"
-echo "   Group   : $AGENT_GROUP"
-echo "   Name    : $AGENT_NAME"
+### ===============================
+### FUNCTIONS
+### ===============================
+success() { echo "✅ $1: SUCCESS"; }
+fail() {
+  echo "❌ $1: FAILED"
+  tail -n 20 "$LOG"
+  exit 1
+}
 
-wget -q $URL
+run() {
+  STEP="$1"; shift
+  if "$@" >>"$LOG" 2>&1; then
+    success "$STEP"
+  else
+    fail "$STEP"
+  fi
+}
 
-sudo WAZUH_MANAGER="$WAZUH_MANAGER" \
-     WAZUH_AGENT_GROUP="$AGENT_GROUP" \
-     WAZUH_AGENT_NAME="$AGENT_NAME" \
-     dpkg -i $PKG
+### ===============================
+### CHECK ROOT
+### ===============================
+run "CHECK_ROOT" bash -c '[[ "$EUID" -eq 0 ]]'
 
-systemctl enable wazuh-agent --now
+### ===============================
+### DETECT OS
+### ===============================
+source /etc/os-release
+OS_ID="$ID"
+ARCH="$(uname -m)"
 
-echo "✅ INSTALL SUCCESS"
+[[ "$ARCH" != "x86_64" ]] && fail "ARCH_NOT_SUPPORTED"
+
+### ===============================
+### INSTALL FUNCTIONS
+### ===============================
+install_deb() {
+  PKG="wazuh-agent_${WAZUH_VERSION}-1_amd64.deb"
+  URL="https://packages.wazuh.com/4.x/apt/pool/main/w/wazuh-agent/${PKG}"
+
+  wget -q $URL
+  WAZUH_MANAGER="$WAZUH_MANAGER" \
+  WAZUH_AGENT_GROUP="$GROUP" \
+  WAZUH_AGENT_NAME="$AGENT_NAME" \
+  dpkg -i $PKG
+}
+
+install_rpm() {
+  PKG="wazuh-agent-${WAZUH_VERSION}-1.x86_64.rpm"
+  URL="https://packages.wazuh.com/4.x/yum/${PKG}"
+
+  rpm --import https://packages.wazuh.com/key/GPG-KEY-WAZUH
+  wget -q $URL
+
+  WAZUH_MANAGER="$WAZUH_MANAGER" \
+  WAZUH_AGENT_GROUP="$GROUP" \
+  WAZUH_AGENT_NAME="$AGENT_NAME" \
+  rpm -ivh $PKG
+}
+
+### ===============================
+### GROUP INPUT
+### ===============================
+GROUP="${1:-$DEFAULT_GROUP}"
+
+### ===============================
+### INSTALL AGENT
+### ===============================
+case "$OS_ID" in
+  ubuntu|debian)
+    run "INSTALL_AGENT" install_deb
+    ;;
+  rhel|centos|rocky|almalinux|ol|amzn)
+    run "INSTALL_AGENT" install_rpm
+    ;;
+  *)
+    fail "UNSUPPORTED_OS"
+    ;;
+esac
+
+### ===============================
+### ENABLE & START
+### ===============================
+run "ENABLE_AGENT" systemctl enable wazuh-agent
+run "START_AGENT" systemctl restart wazuh-agent
+
+### ===============================
+### FINISH
+### ===============================
+echo "======================================"
+echo "✅ WAZUH AGENT INSTALLATION COMPLETED"
+echo "📡 Manager : $WAZUH_MANAGER"
+echo "🖥 Agent   : $AGENT_NAME"
+echo "🧩 Group   : $GROUP"
+echo "📄 Log     : $LOG"
+echo "======================================"
