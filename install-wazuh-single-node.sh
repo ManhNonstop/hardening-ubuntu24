@@ -20,6 +20,7 @@ mkdir -p $(dirname $LOG)
 
 ufw allow 1515/tcp
 ufw allow 1514/udp
+ufw allow 1514/tcp
 ufw reload
 
 ### ===============================
