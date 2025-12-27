@@ -18,6 +18,10 @@ IP=$(hostname -I | awk '{print $1}')
 mkdir -p $(dirname $LOG)
 : > $LOG
 
+ufw allow 1515/tcp
+ufw allow 1514/udp
+ufw reload
+
 ### ===============================
 ### FUNCTIONS
 ### ===============================
